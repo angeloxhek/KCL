@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="KCLSuccess/KCLSuccess.vcxproj" Id="634a60c1-32a4-45f5-b907-ca50c1a0d76a" />
+</Solution>

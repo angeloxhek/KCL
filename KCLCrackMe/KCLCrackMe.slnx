@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="KCLCrackMe/KCLCrackMe.vcxproj" Id="30aa6692-99ab-4e96-950a-a9d59eb0ab5c" />
+</Solution>

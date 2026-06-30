@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="KrnlCryptoLib/KrnlCryptoLib.vcxproj" Id="2657c935-da16-4888-a15e-1cb076e5c75b" />
+</Solution>
