@@ -3,5 +3,5 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="KCLInstaller/KCLInstaller.vcxproj" />
+  <Project Path="KCLInstaller/KCLInstaller.vcxproj" Id="13e22750-f759-4051-a4f5-0eceb4f2e80a" />
 </Solution>

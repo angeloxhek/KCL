@@ -177,26 +177,45 @@ namespace CryptInstaller {
 
         SetEnvironmentVariableA("KCL_CORE_INIT", "0x8A");
 
-        char* cmdline = new char[targetExe.size() + 3];
-        strcpy(cmdline, ("\"" + targetExe + "\"").c_str());
+        char myPath[MAX_PATH];
+        GetModuleFileNameA(NULL, myPath, MAX_PATH);
+
+        string cmdline = string("\"") + myPath + "\" --launch \"" + targetExe + "\"";
 
         STARTUPINFOA si{ sizeof(si) };
         PROCESS_INFORMATION pi{};
 
         si.lpTitle = (LPSTR)"KCL";
 
-        if (CreateProcessA(NULL, cmdline, NULL, NULL, FALSE, CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP, NULL, NULL, &si, &pi)) {
+        if (CreateProcessA(NULL, (LPSTR)cmdline.c_str(), NULL, NULL, FALSE, CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP, NULL, NULL, &si, &pi)) {
             CloseHandle(pi.hProcess);
             CloseHandle(pi.hThread);
         }
-
-        delete[] cmdline;
     }
 }
 
 int wmain(int argc, wchar_t* argv[])
 {
     setlocale(LC_ALL, "ru-RU.UTF-8");
+
+    if (argc > 2 && wcscmp(argv[1], L"--launch") == 0) {
+        wcout << L"\n[!] Запуск процесса...\n";
+
+        STARTUPINFOW si{ sizeof(si) };
+        PROCESS_INFORMATION pi{};
+
+        if (CreateProcessW(argv[2], NULL, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
+            WaitForSingleObject(pi.hProcess, INFINITE);
+            CloseHandle(pi.hProcess);
+            CloseHandle(pi.hThread);
+        }
+        else {
+            wcout << L"Ошибка запуска\n";
+        }
+        wcout << L"\n[!] Процесс завершил работу.\n";
+        system("pause");
+        return 0;
+    }
 
     if (argc > 1 && wcscmp(argv[1], L"--gen-key") == 0) {
         CryptInstaller::generateKey();

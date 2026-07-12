@@ -1,0 +1,918 @@
+     1                                  bits 64
+     2                                  org 0
+     3                                  
+     4                                  %define KCL_VEH_MAGIC 0xDEADBEEFC0DEFACE
+     5                                  
+     6                                  ; key_struct:
+     7                                  ; dq <key>
+     8                                  ; dq <fake1>
+     9                                  ; dq <fake2>
+    10                                  ; dq <fake3>
+    11                                  ; dq <fake4>
+    12                                  
+    13                                  ; ===============================================
+    14                                  ; Блок 0
+    15                                  ; rcx = struct key_struct
+    16                                  start:
+    17 00000000 488D1DF9FFFFFF          	lea rbx, [rel start]
+    18 00000007 51                      	push rcx
+    19 00000008 4989CB                  	mov r11, rcx
+    20 0000000B 488B0DAE030000          	mov rcx, [rel blocks]
+    21 00000012 49390B                  	cmp qword [r11], rcx
+    22 00000015 7508                    	jne .next ; Фейковое условие, всегда выполняется
+    23 00000017 4889DA                  	mov rdx, rbx
+    24 0000001A E8C1010000              	call KCLRSK
+    25                                  .next:
+    26 0000001F 488B0DA2030000          	mov rcx, [rel block1.addr]
+    27 00000026 4801D9                  	add rcx, rbx
+    28 00000029 488B15A0030000              mov rdx, [rel block1.size]
+    29 00000030 4D31C0                      xor r8, r8
+    30 00000033 4D31C9                  	xor r9, r9
+    31 00000036 E86C000000              	call decrypt
+    32 0000003B 488D0D65000000          	lea rcx, [rel decrypt]
+    33 00000042 51                      	push rcx
+    34 00000043 488D1576030000          	lea rdx, [rel blocks]
+    35 0000004A 4C8D05A7030000          	lea r8, [rel blocks_end]
+    36 00000051 4929D0                  	sub r8, rdx
+    37 00000054 488B056D030000          	mov rax, [rel block1.addr]
+    38 0000005B 4801D8                  	add rax, rbx
+    39 0000005E 50                      	push rax
+    40 0000005F 488D3D9AFFFFFF          	lea rdi, [rel start]
+    41 00000066 488D0D06000000          	lea rcx, [rel .call_point]
+    42 0000006D 4829F9                  	sub rcx, rdi
+    43 00000070 30C0                    	xor al, al
+    44 00000072 FC                      	cld
+    45                                  .call_point:
+    46 00000073 F3AA                    	rep stosb
+    47 00000075 58                      	pop rax
+    48 00000076 59                      	pop rcx
+    49 00000077 4159                    	pop r9
+    50 00000079 4989D8                  	mov r8, rbx
+    51 0000007C FFD0                    	call rax
+    52                                  cleanup:
+    53 0000007E 488D3D7BFFFFFF          	lea rdi, [rel start]
+    54 00000085 488B056C030000          	mov rax, [rel blocks_end]
+    55 0000008C 4801F8                  	add rax, rdi
+    56 0000008F 4889F9                  	mov rcx, rdi
+    57 00000092 480308                  	add rcx, [rax]
+    58 00000095 4883C008                	add rax, 8
+    59 00000099 480308                  	add rcx, [rax]
+    60 0000009C 4829F9                  	sub rcx, rdi
+    61 0000009F 30C0                    	xor al, al
+    62 000000A1 FC                      	cld
+    63 000000A2 E919060000              	jmp exit_func
+    64                                  	
+    65                                  ; rcx = void*  decrypt_addr
+    66                                  ; rdx = size_t decrypt_size
+    67                                  ; r8  = void*  erase_addr
+    68                                  ; r9  = size_t erase_size
+    69                                  ; r11 = struct key_struct
+    70                                  decrypt:
+    71 000000A7 58                      	pop rax
+    72 000000A8 4152                    	push r10
+    73 000000AA 4989C2                  	mov r10, rax
+    74 000000AD 4809D1                  	or rcx, rdx
+    75 000000B0 742C                    	jz .erase
+    76 000000B2 51                      	push rcx
+    77 000000B3 52                      	push rdx
+    78 000000B4 4831C0                  	xor rax, rax
+    79 000000B7 B905000000              	mov ecx, 5
+    80                                  .key:
+    81 000000BC 498B1B                  	mov rbx, [r11]
+    82 000000BF 4831D8                  	xor rax, rbx
+    83 000000C2 4889DF                  	mov rdi, rbx
+    84 000000C5 48F7D7                  	not rdi
+    85 000000C8 4801C7                  	add rdi, rax
+    86 000000CB 48C1C703                	rol rdi, 3
+    87 000000CF 49893B                  	mov [r11], rdi
+    88 000000D2 4983C308                	add r11, 8
+    89 000000D6 E2E4                    	loop .key
+    90 000000D8 50                      	push rax
+    91 000000D9 4D09C8                  	or r8, r9
+    92 000000DC 7410                    	jz .no_erase
+    93                                  .erase:
+    94 000000DE 4C89C9                  	mov rcx, r9
+    95 000000E1 4C89C7                  	mov rdi, r8
+    96 000000E4 30C0                    	xor al, al
+    97 000000E6 FC                      	cld
+    98 000000E7 F3AA                    	rep stosb
+    99 000000E9 4809D1                  	or rcx, rdx
+   100 000000EC 7444                    	jz .no_decrypt
+   101                                  .no_erase:
+   102 000000EE 58                      	pop rax
+   103 000000EF 488D0DEA000000          	lea rcx, [rel KCLRSK]
+   104 000000F6 4889C2                  	mov rdx, rax
+   105 000000F9 4883EC20                	sub rsp, 32
+   106 000000FD E837000000              	call KCLFillRawSecKey
+   107 00000102 488D0DD7000000          	lea rcx, [rel KCLRSK]
+   108 00000109 488D1530010000          	lea rdx, [rel KCLSK]
+   109 00000110 E854000000              	call KCLGetSecKey
+   110 00000115 4C8D0524010000          	lea r8, [rel KCLSK]
+   111 0000011C 4883C420                	add rsp, 32
+   112 00000120 5A                      	pop rdx
+   113 00000121 59                      	pop rcx
+   114 00000122 4989C9                  	mov r9, rcx
+   115 00000125 4883EC20                	sub rsp, 32
+   116 00000129 E86B000000              	call KCLDecryptUA
+   117 0000012E 4883C420                	add rsp, 32
+   118                                  .no_decrypt:
+   119 00000132 4C89D0                  	mov rax, r10
+   120 00000135 415A                    	pop r10
+   121 00000137 FFE0                    	jmp rax
+   122                                  
+   123                                  ; rcx = LPKCLRSK buff
+   124                                  ; rdx = size_t   key
+   125                                  KCLFillRawSecKey:
+   126 00000139 48890D18020000          	mov qword [rel KCLRawSecKeyArgs], rcx
+   127 00000140 48891519020000          	mov qword [rel KCLRawSecKeyArgs + 8], rdx
+   128 00000147 C6051A02000000          	mov byte [rel KCLRawSecKeyArgs + 16], 0
+   129 0000014E 488B0D6B020000          	mov rcx, [rel blocks]
+   130 00000155 BA02000000              	mov rdx, 2
+   131 0000015A 4C8D05F7010000          	lea r8, [rel KCLRawSecKeyArgs]
+   132 00000161 41B918000000            	mov r9, 24
+   133 00000167 EB6E                    	jmp KCLStdCall
+   134                                  
+   135                                  ; rcx = LPKCLRSK input
+   136                                  ; rdx = LPKCLSK  output
+   137                                  KCLGetSecKey:
+   138 00000169 48890D00020000          	mov qword [rel KCLSecKeyArgs], rcx
+   139 00000170 48891501020000          	mov qword [rel KCLSecKeyArgs + 8], rdx
+   140 00000177 C6050202000000          	mov byte [rel KCLSecKeyArgs + 16], 0
+   141 0000017E 488B0D3B020000          	mov rcx, [rel blocks]
+   142 00000185 BA01000000              	mov rdx, 1
+   143 0000018A 4C8D05DF010000          	lea r8, [rel KCLSecKeyArgs]
+   144 00000191 41B918000000            	mov r9, 24
+   145 00000197 EB3E                    	jmp KCLStdCall
+   146                                  	
+   147                                  ; rcx = void*   input
+   148                                  ; rdx = size_t  len
+   149                                  ; r8  = LPKCLSK key
+   150                                  ; r9  = void*   output
+   151                                  KCLDecryptUA:
+   152 00000199 48890DE8010000          	mov qword [rel KCLCryptArgs], rcx
+   153 000001A0 488915E9010000          	mov qword [rel KCLCryptArgs + 8], rdx
+   154 000001A7 4C8905EA010000          	mov qword [rel KCLCryptArgs + 16], r8
+   155 000001AE 4C890DEB010000          	mov qword [rel KCLCryptArgs + 24], r9
+   156 000001B5 C605EC01000000          	mov byte [rel KCLCryptArgs + 32], 0
+   157 000001BC 488B0DFD010000          	mov rcx, [rel blocks]
+   158 000001C3 BA04000000              	mov rdx, 4
+   159 000001C8 4C8D05B9010000          	lea r8, [rel KCLCryptArgs]
+   160 000001CF 41B928000000            	mov r9, 40
+   161 000001D5 EB00                    	jmp KCLStdCall
+   162                                  
+   163                                  ; rcx = size_t magic
+   164                                  ; rdx = size_t funcId
+   165                                  ; r8  = void*  args
+   166                                  ; r9  = size_t size
+   167                                  KCLStdCall:
+   168 000001D7 0F0B                    	ud2
+   169 000001D9 C3                      	ret
+   170                                  
+   171                                  ; rcx = void* blocks
+   172                                  ; rdx = void* start
+   173 000001DA 90<rep 6h>              align 8
+   174                                  KCLRSK:
+   175 000001E0 4989D3                  	mov r11, rdx
+   176 000001E3 4989CC                  	mov r12, rcx
+   177 000001E6 E855000000              	call KCLSK
+   178 000001EB E84A010000              	call KCLSK3
+   179 000001F0 E87B010000              	call KCLSecKeyArgs
+   180 000001F5 4C89D9                  	mov rcx, r11
+   181 000001F8 E8C2000000              	call KCLSK2
+   182 000001FD 48C7C1FFFFFFFF          	mov rcx, -1
+   183 00000204 6A00                    	push 0
+   184 00000206 4889E2                  	mov rdx, rsp
+   185 00000209 4D31C0                  	xor r8, r8
+   186 0000020C 498B442438              	mov rax, [r12+56]
+   187 00000211 4C8B08                  	mov r9, [rax]
+   188 00000214 4C034808                	add r9, [rax+8]
+   189 00000218 4D2B4C2408              	sub r9, [r12+8]
+   190 0000021D 41BA18000000            	mov r10, 0x18
+   191 00000223 6A40                    	push 0x40
+   192 00000225 6800300000              	push 0x3000
+   193 0000022A 4883EC20                	sub rsp, 32
+   194 0000022E E825010000              	call KCLRawSecKeyArgs
+   195 00000233 4883C430                	add rsp, 48
+   196 00000237 415D                    	pop r13
+   197 00000239 E94A010000              	jmp KCLCryptArgs
+   198                                  
+   199                                  ; rcx = void* blocks
+   200                                  ; rdx = void* start
+   201 0000023E 90<rep 2h>              align 8
+   202                                  KCLSK:
+   203 00000240 4989C8                  	mov r8, rcx
+   204 00000243 4989D1                  	mov r9, rdx
+   205 00000246 4889D1                  	mov rcx, rdx
+   206 00000249 E85D000000              	call check_symbol
+   207 0000024E 4809C0                  	or rax, rax
+   208 00000251 0F8527FEFFFF            	jnz cleanup
+   209 00000257 4831D2                  	xor rdx, rdx
+   210                                  .loop:
+   211 0000025A 4883C208                	add rdx, 8
+   212 0000025E 4883FA38                	cmp rdx, 56
+   213 00000262 741B                    	je .next
+   214 00000264 498B0C10                	mov rcx, [r8+rdx]
+   215 00000268 4C01C9                  	add rcx, r9
+   216 0000026B E83B000000              	call check_symbol
+   217 00000270 4809C0                  	or rax, rax
+   218 00000273 0F8505FEFFFF            	jnz cleanup
+   219 00000279 4883C208                	add rdx, 8                   
+   220 0000027D EBDB                    	jmp .loop
+   221                                  .next:
+   222 0000027F 4D8B4018                	mov r8, [r8+24]
+   223 00000283 4D01C8                  	add r8, r9
+   224 00000286 B904000000              	mov rcx, 4
+   225                                  .loop2:
+   226 0000028B 51                      	push rcx
+   227 0000028C 4989CA                  	mov r10, rcx
+   228 0000028F 49FFCA                  	dec r10
+   229 00000292 4B8B0CD0                	mov rcx, [r8 + r10*8]
+   230 00000296 4C01C9                  	add rcx, r9
+   231 00000299 E80D000000              	call check_symbol
+   232 0000029E 4809C0                  	or rax, rax
+   233 000002A1 0F85D7FDFFFF            	jnz cleanup
+   234 000002A7 59                      	pop rcx
+   235 000002A8 E2E1                    	loop .loop2
+   236 000002AA C3                      	ret
+   237                                  	
+   238                                  ; rcx = char symbol
+   239                                  check_symbol:
+   240 000002AB 8039E9                  	cmp byte [rcx], 0xE9
+   241 000002AE 7409                    	je .changed
+   242 000002B0 8039CC                  	cmp byte [rcx], 0xCC
+   243 000002B3 7404                    	je .changed
+   244 000002B5 4831C0                  	xor rax, rax
+   245 000002B8 C3                      	ret
+   246                                  .changed:
+   247 000002B9 B801000000              	mov rax, 1
+   248 000002BE C3                      	ret
+   249                                  
+   250                                  ; rcx = void* base
+   251                                  KCLSK2:
+   252 000002BF 4889CA                  	mov rdx, rcx
+   253 000002C2 55                      	push rbp
+   254 000002C3 4889E5                  	mov rbp, rsp
+   255 000002C6 4881EC80000000          	sub rsp, 128
+   256 000002CD F30F6F01                	movdqu xmm0, [rcx]
+   257 000002D1 660FEFC9                	pxor xmm1, xmm1
+   258 000002D5 660F3ADFD001            	aeskeygenassist xmm2, xmm0, 0x01
+   259 000002DB 660F70D2FF              	pshufd xmm2, xmm2, 0xFF
+   260 000002E0 660FEFC2                	pxor xmm0, xmm2
+   261 000002E4 660F7F0424              	movdqa [rsp], xmm0
+   262 000002E9 660F3ADFD002            	aeskeygenassist xmm2, xmm0, 0x02
+   263 000002EF 660F70D2FF              	pshufd xmm2, xmm2, 0xFF
+   264 000002F4 660FEFC2                	pxor xmm0, xmm2
+   265 000002F8 660F7F442410            	movdqa [rsp+16], xmm0
+   266 000002FE B9E8030000              	mov rcx, 1000
+   267 00000303 488B35BE000000          	mov rsi, [rel block1.addr]
+   268 0000030A 4801D6                  	add rsi, rdx
+   269                                  .fake_aes_loop:
+   270 0000030D F30F6F1E                	movdqu xmm3, [rsi]
+   271 00000311 660FEFD9                	pxor xmm3, xmm1
+   272 00000315 660F38DC1C24            	aesenc xmm3, [rsp]
+   273 0000031B 660F38DC5C2410          	aesenc xmm3, [rsp+16]
+   274 00000322 660F38DDD8              	aesenclast xmm3, xmm0
+   275 00000327 F30F7F1E                	movdqu [rsi], xmm3
+   276 0000032B 660F6FCB                	movdqa xmm1, xmm3
+   277 0000032F 4883C610                	add rsi, 16
+   278 00000333 E2D8                    	loop .fake_aes_loop
+   279 00000335 4889EC                  	mov rsp, rbp
+   280 00000338 5D                      	pop rbp
+   281 00000339 C3                      	ret
+   282                                  	
+   283                                  KCLSK3:
+   284 0000033A 65488B042560000000      	mov rax, qword gs:[0x60]
+   285 00000343 8B80BC000000            	mov eax, dword [rax+0xBC]
+   286 00000349 83E070                  	and eax, 0x70
+   287 0000034C 85C0                    	test eax, eax
+   288 0000034E 0F852AFDFFFF            	jnz cleanup
+   289 00000354 C3                      	ret
+   290                                  
+   291                                  ; 277 bytes
+   292                                  
+   293                                  ; rcx = void* arg1
+   294                                  ; rdx = void* arg2
+   295                                  ; r8  = void* arg3
+   296                                  ; r9  = void* arg4
+   297                                  ; r10 = DWORD syscall
+   298 00000355 90<rep 3h>              align 8
+   299                                  KCLRawSecKeyArgs:
+   300 00000358 4489D0                  	mov eax, r10d
+   301 0000035B 4989CA                  	mov r10, rcx
+   302 0000035E E800000000              	call .get_rip
+   303                                  .get_rip:
+   304 00000363 5B                      	pop rbx
+   305 00000364 4883C30A                	add rbx, 10
+   306 00000368 FFE3                    	jmp rbx
+   307 0000036A 90                      	nop
+   308 0000036B 90                      	nop
+   309 0000036C 0F05                    	syscall
+   310 0000036E C3                      	ret
+   311 0000036F CC                      	times (24 - ($ - KCLRawSecKeyArgs)) db 0xCC ; 1 byte
+   312                                  
+   313                                  align 8
+   314                                  KCLSecKeyArgs:
+   315 00000370 BB0000FE7F              	mov rbx, 0x7FFE0000
+   316 00000375 8B8320030000            	mov eax, dword [rbx+0x320]
+   317 0000037B 3D00000100              	cmp eax, 0x10000
+   318 00000380 0F82F8FCFFFF            	jb cleanup
+   319 00000386 C3                      	ret
+   320 00000387 CC                      	times (24 - ($ - KCLSecKeyArgs)) db 0xCC ; 1 byte
+   321                                  
+   322                                  ; r11 = void* start
+   323                                  ; r12 = void* blocks
+   324                                  ; r13 = void* newbase
+   325                                  align 8
+   326                                  KCLCryptArgs:
+   327 00000388 498B742408              	mov rsi, [r12+8]
+   328 0000038D 4C01DE                  	add rsi, r11
+   329 00000390 4C89EF                  	mov rdi, r13
+   330 00000393 498B442438              	mov rax, [r12+56]
+   331 00000398 488B08                  	mov rcx, [rax]
+   332 0000039B 48034808                	add rcx, [rax+8]
+   333 0000039F 4989C9                  	mov r9, rcx
+   334 000003A2 4829F1                  	sub rcx, rsi
+   335 000003A5 F3A4                    	rep movsb
+   336 000003A7 4D89D8                  	mov r8, r11
+   337 000003AA 4831C9                  	xor rcx, rcx
+   338 000003AD 4831D2                  	xor rdx, rdx
+   339 000003B0 4D31DB                  	xor r11, r11
+   340 000003B3 4155                    	push r13
+   341 000003B5 E9EDFCFFFF              	jmp decrypt
+   342                                  
+   343                                  ; 72 bytes
+   344                                  
+   345                                  ; Структура для билдера
+   346 000003BA 90<rep 6h>              align 8
+   347 000003C0 CEFADEC0EFBEADDE        blocks: dq KCL_VEH_MAGIC ; Как метка и magic для KCL
+   348                                  block1:
+   349 000003C8 0004000000000000        .addr: dq block1_func - start
+   350 000003D0 6C00000000000000        .size: dq block1_func_end - block1_func
+   351                                  block2:
+   352 000003D8 8004000000000000        .addr: dq block2_func - start
+   353 000003E0 7C01000000000000        .size: dq block2_func_end - block2_func
+   354                                  block3:
+   355 000003E8 2006000000000000        .addr: dq block3_func - start
+   356 000003F0 3602000000000000        .size: dq block3_func_end - block2_func
+   357 000003F8 E803000000000000        blocks_end: dq block3 - start ; Указатель на последний блок
+   358                                  
+   359                                  ; =============================================
+   360                                  ; Блок 1
+   361                                  ; rcx = void*  decrypt_func
+   362                                  ; rdx = void*  blocks_addr
+   363                                  ; r8  = void*  base
+   364                                  ; r9  = struct key_struct
+   365                                  align 16
+   366                                  block1_func:
+   367 00000400 415A                    	pop r10
+   368 00000402 4989CC                  	mov r12, rcx
+   369 00000405 4989D5                  	mov r13, rdx
+   370 00000408 4D89C6                  	mov r14, r8
+   371 0000040B 4D89CF                  	mov r15, r9
+   372 0000040E 498B4D18                	mov rcx, [r13+24]
+   373 00000412 4C01F1                  	add rcx, r14
+   374 00000415 498B5520                	mov rdx, [r13+32]
+   375 00000419 4D31C0                  	xor r8, r8
+   376 0000041C 4D31C9                  	xor r9, r9
+   377 0000041F 4D89FB                  	mov r11, r15
+   378 00000422 41FFD4                  	call r12
+   379 00000425 498B4D28                	mov rcx, [r13+40]
+   380 00000429 4C01F1                  	add rcx, r14
+   381 0000042C 498B5530                	mov rdx, [r13+48]
+   382 00000430 4D31C0                  	xor r8, r8
+   383 00000433 4D31C9                  	xor r9, r9
+   384 00000436 4D89FB                  	mov r11, r15
+   385 00000439 41FFD4                  	call r12
+   386 0000043C 4D8B4508                	mov r8, [r13+8]
+   387 00000440 4D01F0                  	add r8, r14
+   388 00000443 4D8B4D10                	mov r9, [r13+16]
+   389 00000447 4831C9                  	xor rcx, rcx
+   390 0000044A 4831D2                  	xor rdx, rdx
+   391 0000044D 4D31DB                  	xor r11, r11
+   392 00000450 4152                    	push r10
+   393 00000452 498B4528                	mov rax, [r13+40]
+   394 00000456 4C01F0                  	add rax, r14
+   395 00000459 50                      	push rax
+   396 0000045A 4D39F2                  	cmp r10, r14
+   397 0000045D 7604                    	jbe .fake_check
+   398 0000045F 41FFE4                  	jmp r12
+   399 00000462 C3                      	ret
+   400                                  .fake_check:
+   401 00000463 41FFD4                  	call r12
+   402 00000466 E913FCFFFF              	jmp cleanup
+   403 0000046B 90                      	nop
+   404                                  	
+   405 0000046C 0000000000000000        block1_func_end: dq 0
+   406                                  
+   407                                  ; =============================================
+   408                                  ; Блок 2
+   409 00000474 90<rep Ch>              align 16
+   410                                  block2_func:
+   411                                  block2_map:
+   412 00000480 A004000000000000        .xor_decrypt_addr: dq xor_decrypt - start
+   413 00000488 B704000000000000        .KCLRuntimeHashDJB2_addr: dq KCLRuntimeHashDJB2 - start
+   414 00000490 D804000000000000        .KCLRuntimeHashDJB2_W_addr: dq KCLRuntimeHashDJB2_W - start
+   415 00000498 E305000000000000        .GetFuncFromModule_addr: dq GetFuncFromModule - start
+   416                                  
+   417                                  %macro KCLHashStringDJB2 2
+   418                                      %assign %%hash 5381
+   419                                      %strlen %%len %2
+   420                                      %assign %%i 1
+   421                                      %rep %%len
+   422                                          %substr %%c %2 %%i
+   423                                          %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF 
+   424                                          %assign %%i %%i + 1
+   425                                      %endrep
+   426                                      %define %1 %%hash
+   427                                  %endmacro
+   428                                  
+   429                                  %macro KCLHashStringDJB2_W 2
+   430                                      %assign %%hash 5381
+   431                                      %strlen %%len %2
+   432                                      %assign %%i 1
+   433                                      %rep %%len
+   434                                          %substr %%c %2 %%i
+   435                                          %if %%c >= 'A' && %%c <= 'Z'
+   436                                              %assign %%c %%c + 32
+   437                                          %endif
+   438                                          %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   439                                          %assign %%i %%i + 1
+   440                                      %endrep
+   441                                      %define %1 %%hash
+   442                                  %endmacro
+   443                                  
+   444                                  %macro XOR_STRING 2
+   445                                      %strlen %%len %1
+   446                                      %assign %%i 1
+   447                                      %rep %%len
+   448                                          %substr %%c %1 %%i
+   449                                          db %%c ^ %2
+   450                                          %assign %%i %%i + 1
+   451                                      %endrep
+   452                                      db 0 ^ %2                 
+   453                                  %endmacro
+   454                                  
+   455                                  ; rcx = char*  str
+   456                                  ; rdx = size_t len
+   457                                  ; r8  = char   key
+   458                                  ; return = char*
+   459                                  xor_decrypt:
+   460 000004A0 4889C8                  	mov rax, rcx
+   461 000004A3 48FFCA                  	dec rdx
+   462 000004A6 740B                    	jz .set_null
+   463                                  .loop:
+   464 000004A8 443001                  	xor byte [rcx], r8b
+   465 000004AB 48FFC1                  	inc rcx
+   466 000004AE 48FFCA                  	dec rdx
+   467 000004B1 75F5                    	jnz .loop
+   468                                  	
+   469                                  .set_null:
+   470 000004B3 C60100                  	mov byte [rcx], 0
+   471 000004B6 C3                      	ret
+   472                                  
+   473                                  ; rcx    = const char* str
+   474                                  ; return = DWORD
+   475                                  KCLRuntimeHashDJB2:
+   476 000004B7 B805150000              	mov eax, 5381
+   477 000004BC 4989C8                  	mov r8, rcx
+   478                                  .loop:
+   479 000004BF 410FB608                	movzx ecx, byte [r8]
+   480 000004C3 85C9                    	test ecx, ecx
+   481 000004C5 7410                    	jz .ret
+   482 000004C7 89C2                    	mov edx, eax
+   483 000004C9 C1E205                  	shl edx, 5
+   484 000004CC 01C2                    	add edx, eax
+   485 000004CE 01CA                    	add edx, ecx
+   486 000004D0 89D0                    	mov eax, edx
+   487 000004D2 49FFC0                  	inc r8
+   488 000004D5 EBE8                    	jmp .loop
+   489                                  .ret:
+   490 000004D7 C3                      	ret
+   491                                  	
+   492                                  ; rcx    = const wchar_t* str
+   493                                  ; return = DWORD
+   494                                  KCLRuntimeHashDJB2_W:
+   495 000004D8 B805150000              	mov eax, 5381
+   496 000004DD 4989C8                  	mov r8, rcx
+   497                                  .loop:
+   498 000004E0 410FB708                	movzx ecx, word [r8]
+   499 000004E4 85C9                    	test ecx, ecx
+   500 000004E6 741F                    	jz .ret
+   501 000004E8 67448D49BF              	lea r9d, [ecx - "A"]
+   502 000004ED 4183F919                	cmp r9d, "Z"-"A"
+   503 000004F1 7703                    	ja .next
+   504 000004F3 83C120                  	add ecx, 32
+   505                                  .next:
+   506 000004F6 89C2                    	mov edx, eax
+   507 000004F8 C1E205                  	shl edx, 5
+   508 000004FB 01C2                    	add edx, eax
+   509 000004FD 01CA                    	add edx, ecx
+   510 000004FF 89D0                    	mov eax, edx
+   511 00000501 4983C002                	add r8, 2
+   512 00000505 EBD9                    	jmp .loop
+   513                                  .ret:
+   514 00000507 C3                      	ret
+   515                                  	
+   516                                  ; rcx    = DWORD hash
+   517                                  ; return = PVOID
+   518                                  GetModuleBaseByHash:
+   519 00000508 4889C8                  	mov rax, rcx
+   520 0000050B 65488B142560000000      	mov rdx, qword gs:[0x60]
+   521 00000514 488B5218                	mov rdx, [rdx+0x18]
+   522 00000518 4989D0                  	mov r8, rdx
+   523 0000051B 4983C010                	add r8, 0x10
+   524 0000051F 498B10                  	mov rdx, [r8]
+   525                                  .loop:
+   526 00000522 4939D0                  	cmp r8, rdx
+   527 00000525 7428                    	je .ret
+   528 00000527 4C8B4A60                	mov r9, [rdx+0x60]
+   529 0000052B 4D09C9                  	or r9, r9
+   530 0000052E 741A                    	jz .next
+   531 00000530 50                      	push rax
+   532 00000531 4150                    	push r8
+   533 00000533 52                      	push rdx
+   534 00000534 4C89C9                  	mov rcx, r9
+   535 00000537 E89CFFFFFF              	call KCLRuntimeHashDJB2_W
+   536 0000053C 5A                      	pop rdx
+   537 0000053D 4158                    	pop r8
+   538 0000053F 59                      	pop rcx
+   539 00000540 4839C8                  	cmp rax, rcx
+   540 00000543 7505                    	jne .next
+   541 00000545 488B4230                	mov rax, [rdx+0x30]
+   542 00000549 C3                      	ret
+   543                                  .next:
+   544 0000054A 488B12                  	mov rdx, [rdx]
+   545 0000054D EBD3                    	jmp .loop
+   546                                  .ret:
+   547 0000054F 4831C0                  	xor rax, rax
+   548 00000552 C3                      	ret
+   549                                  	
+   550                                  ; rcx    = PVOID base
+   551                                  ; rdx    = DWORD hash
+   552                                  ; return = PVOID
+   553                                  GetProcAddressByHash:
+   554 00000553 4152                    	push r10
+   555 00000555 4153                    	push r11
+   556 00000557 4154                    	push r12
+   557 00000559 6681394D5A              	cmp word [rcx], 0x5A4D
+   558 0000055E 7579                    	jne .nullret
+   559 00000560 448B413C                	mov r8d, dword [rcx+0x3C]
+   560 00000564 4901C8                  	add r8, rcx
+   561 00000567 41813850450000          	cmp dword [r8], 0x00004550
+   562 0000056E 7569                    	jne .nullret
+   563 00000570 4981C088000000          	add r8, 0x88
+   564 00000577 458B00                  	mov r8d, dword [r8]
+   565 0000057A 4983F800                	cmp r8, 0
+   566 0000057E 7459                    	jz .nullret
+   567 00000580 4901C8                  	add r8, rcx
+   568 00000583 458B4820                	mov r9d, dword [r8+0x20]
+   569 00000587 4901C9                  	add r9, rcx
+   570 0000058A 458B5018                	mov r10d, dword [r8+0x18]
+   571 0000058E 458B581C                	mov r11d, dword [r8+0x1C]
+   572 00000592 4901CB                  	add r11, rcx
+   573 00000595 458B6024                	mov r12d, dword[r8+0x24]
+   574 00000599 4901CC                  	add r12, rcx
+   575 0000059C 4831C0                  	xor rax, rax
+   576                                  .loop:
+   577 0000059F 4C39D0                  	cmp rax, r10
+   578 000005A2 7335                    	jae .nullret
+   579 000005A4 458B0481                	mov r8d, dword [r9+rax*4]
+   580 000005A8 4901C8                  	add r8, rcx
+   581 000005AB 50                      	push rax
+   582 000005AC 52                      	push rdx
+   583 000005AD 51                      	push rcx
+   584 000005AE 4C89C1                  	mov rcx, r8
+   585 000005B1 E801FFFFFF              	call KCLRuntimeHashDJB2
+   586 000005B6 4989C0                  	mov r8, rax
+   587 000005B9 59                      	pop rcx
+   588 000005BA 5A                      	pop rdx
+   589 000005BB 58                      	pop rax
+   590 000005BC 4939D0                  	cmp r8, rdx
+   591 000005BF 7513                    	jne .next
+   592 000005C1 4D0FB70444              	movzx r8, word [r12+rax*2]
+   593 000005C6 438B0483                	mov eax, [r11+r8*4]
+   594 000005CA 4801C8                  	add rax, rcx
+   595 000005CD 415C                    	pop r12
+   596 000005CF 415B                    	pop r11
+   597 000005D1 415A                    	pop r10
+   598 000005D3 C3                      	ret
+   599                                  .next:
+   600 000005D4 48FFC0                  	inc rax
+   601 000005D7 EBC6                    	jmp .loop
+   602                                  .nullret:
+   603 000005D9 4831C0                  	xor rax, rax
+   604 000005DC 415C                    	pop r12
+   605 000005DE 415B                    	pop r11
+   606 000005E0 415A                    	pop r10
+   607 000005E2 C3                      	ret
+   608                                  
+   609                                  ; rcx    = DWORD module
+   610                                  ; rdx    = DWORD hash
+   611                                  ; return = PVOID
+   612                                  GetFuncFromModule:
+   613 000005E3 52                      	push rdx
+   614 000005E4 E81FFFFFFF              	call GetModuleBaseByHash
+   615 000005E9 4809C0                  	or rax, rax
+   616 000005EC 7505                    	jnz .next
+   617 000005EE 5A                      	pop rdx
+   618 000005EF 4831C0                  	xor rax, rax
+   619 000005F2 C3                      	ret
+   620                                  .next:
+   621 000005F3 4889C1                  	mov rcx, rax
+   622 000005F6 5A                      	pop rdx
+   623 000005F7 E957FFFFFF              	jmp GetProcAddressByHash
+   624                                  
+   625 000005FC 0000000000000000        block2_func_end: dq 0
+   626                                  
+   627                                  ; =============================================
+   628                                  ; Блок 3
+   629                                  ; r12 = void*  decrypt_func
+   630                                  ; r13 = void*  blocks_addr
+   631                                  ; r14 = void*  base
+   632                                  ; r15 = struct key_struct
+   633                                  
+   634                                  KCLHashStringDJB2_W HASH_KERNEL32,     "kernel32.dll"
+   430                              <1>  %assign %%hash 5381
+   431                              <1>  %strlen %%len %2
+   432                              <1>  %assign %%i 1
+   433                              <1>  %rep %%len
+   434                              <1>  %substr %%c %2 %%i
+   435                              <1>  %if %%c >= 'A' && %%c <= 'Z'
+   436                              <1>  %assign %%c %%c + 32
+   437                              <1>  %endif
+   438                              <1>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   439                              <1>  %assign %%i %%i + 1
+   440                              <1>  %endrep
+   434                              <2>  %substr %%c %2 %%i
+   435                              <2>  %if %%c >= 'A' && %%c <= 'Z'
+   436                              <2>  %assign %%c %%c + 32
+   437                              <2>  %endif
+   438                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   439                              <2>  %assign %%i %%i + 1
+   434                              <2>  %substr %%c %2 %%i
+   435                              <2>  %if %%c >= 'A' && %%c <= 'Z'
+   436                              <2>  %assign %%c %%c + 32
+   437                              <2>  %endif
+   438                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   439                              <2>  %assign %%i %%i + 1
+   434                              <2>  %substr %%c %2 %%i
+   435                              <2>  %if %%c >= 'A' && %%c <= 'Z'
+   436                              <2>  %assign %%c %%c + 32
+   437                              <2>  %endif
+   438                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   439                              <2>  %assign %%i %%i + 1
+   434                              <2>  %substr %%c %2 %%i
+   435                              <2>  %if %%c >= 'A' && %%c <= 'Z'
+   436                              <2>  %assign %%c %%c + 32
+   437                              <2>  %endif
+   438                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   439                              <2>  %assign %%i %%i + 1
+   434                              <2>  %substr %%c %2 %%i
+   435                              <2>  %if %%c >= 'A' && %%c <= 'Z'
+   436                              <2>  %assign %%c %%c + 32
+   437                              <2>  %endif
+   438                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   439                              <2>  %assign %%i %%i + 1
+   434                              <2>  %substr %%c %2 %%i
+   435                              <2>  %if %%c >= 'A' && %%c <= 'Z'
+   436                              <2>  %assign %%c %%c + 32
+   437                              <2>  %endif
+   438                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   439                              <2>  %assign %%i %%i + 1
+   434                              <2>  %substr %%c %2 %%i
+   435                              <2>  %if %%c >= 'A' && %%c <= 'Z'
+   436                              <2>  %assign %%c %%c + 32
+   437                              <2>  %endif
+   438                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   439                              <2>  %assign %%i %%i + 1
+   434                              <2>  %substr %%c %2 %%i
+   435                              <2>  %if %%c >= 'A' && %%c <= 'Z'
+   436                              <2>  %assign %%c %%c + 32
+   437                              <2>  %endif
+   438                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   439                              <2>  %assign %%i %%i + 1
+   434                              <2>  %substr %%c %2 %%i
+   435                              <2>  %if %%c >= 'A' && %%c <= 'Z'
+   436                              <2>  %assign %%c %%c + 32
+   437                              <2>  %endif
+   438                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   439                              <2>  %assign %%i %%i + 1
+   434                              <2>  %substr %%c %2 %%i
+   435                              <2>  %if %%c >= 'A' && %%c <= 'Z'
+   436                              <2>  %assign %%c %%c + 32
+   437                              <2>  %endif
+   438                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   439                              <2>  %assign %%i %%i + 1
+   434                              <2>  %substr %%c %2 %%i
+   435                              <2>  %if %%c >= 'A' && %%c <= 'Z'
+   436                              <2>  %assign %%c %%c + 32
+   437                              <2>  %endif
+   438                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   439                              <2>  %assign %%i %%i + 1
+   434                              <2>  %substr %%c %2 %%i
+   435                              <2>  %if %%c >= 'A' && %%c <= 'Z'
+   436                              <2>  %assign %%c %%c + 32
+   437                              <2>  %endif
+   438                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   439                              <2>  %assign %%i %%i + 1
+   441                              <1>  %define %1 %%hash
+   635                                  KCLHashStringDJB2   HASH_GETSTDHANDLE, "GetStdHandle"
+   418                              <1>  %assign %%hash 5381
+   419                              <1>  %strlen %%len %2
+   420                              <1>  %assign %%i 1
+   421                              <1>  %rep %%len
+   422                              <1>  %substr %%c %2 %%i
+   423                              <1>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   424                              <1>  %assign %%i %%i + 1
+   425                              <1>  %endrep
+   422                              <2>  %substr %%c %2 %%i
+   423                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   424                              <2>  %assign %%i %%i + 1
+   422                              <2>  %substr %%c %2 %%i
+   423                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   424                              <2>  %assign %%i %%i + 1
+   422                              <2>  %substr %%c %2 %%i
+   423                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   424                              <2>  %assign %%i %%i + 1
+   422                              <2>  %substr %%c %2 %%i
+   423                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   424                              <2>  %assign %%i %%i + 1
+   422                              <2>  %substr %%c %2 %%i
+   423                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   424                              <2>  %assign %%i %%i + 1
+   422                              <2>  %substr %%c %2 %%i
+   423                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   424                              <2>  %assign %%i %%i + 1
+   422                              <2>  %substr %%c %2 %%i
+   423                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   424                              <2>  %assign %%i %%i + 1
+   422                              <2>  %substr %%c %2 %%i
+   423                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   424                              <2>  %assign %%i %%i + 1
+   422                              <2>  %substr %%c %2 %%i
+   423                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   424                              <2>  %assign %%i %%i + 1
+   422                              <2>  %substr %%c %2 %%i
+   423                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   424                              <2>  %assign %%i %%i + 1
+   422                              <2>  %substr %%c %2 %%i
+   423                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   424                              <2>  %assign %%i %%i + 1
+   422                              <2>  %substr %%c %2 %%i
+   423                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   424                              <2>  %assign %%i %%i + 1
+   426                              <1>  %define %1 %%hash
+   636                                  KCLHashStringDJB2   HASH_WRITECONSOLE, "WriteConsoleA"
+   418                              <1>  %assign %%hash 5381
+   419                              <1>  %strlen %%len %2
+   420                              <1>  %assign %%i 1
+   421                              <1>  %rep %%len
+   422                              <1>  %substr %%c %2 %%i
+   423                              <1>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   424                              <1>  %assign %%i %%i + 1
+   425                              <1>  %endrep
+   422                              <2>  %substr %%c %2 %%i
+   423                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   424                              <2>  %assign %%i %%i + 1
+   422                              <2>  %substr %%c %2 %%i
+   423                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   424                              <2>  %assign %%i %%i + 1
+   422                              <2>  %substr %%c %2 %%i
+   423                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   424                              <2>  %assign %%i %%i + 1
+   422                              <2>  %substr %%c %2 %%i
+   423                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   424                              <2>  %assign %%i %%i + 1
+   422                              <2>  %substr %%c %2 %%i
+   423                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   424                              <2>  %assign %%i %%i + 1
+   422                              <2>  %substr %%c %2 %%i
+   423                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   424                              <2>  %assign %%i %%i + 1
+   422                              <2>  %substr %%c %2 %%i
+   423                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   424                              <2>  %assign %%i %%i + 1
+   422                              <2>  %substr %%c %2 %%i
+   423                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   424                              <2>  %assign %%i %%i + 1
+   422                              <2>  %substr %%c %2 %%i
+   423                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   424                              <2>  %assign %%i %%i + 1
+   422                              <2>  %substr %%c %2 %%i
+   423                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   424                              <2>  %assign %%i %%i + 1
+   422                              <2>  %substr %%c %2 %%i
+   423                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   424                              <2>  %assign %%i %%i + 1
+   422                              <2>  %substr %%c %2 %%i
+   423                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   424                              <2>  %assign %%i %%i + 1
+   422                              <2>  %substr %%c %2 %%i
+   423                              <2>  %assign %%hash ((%%hash * 33) + %%c) & 0xFFFFFFFF
+   424                              <2>  %assign %%i %%i + 1
+   426                              <1>  %define %1 %%hash
+   637                                  
+   638                                  message: XOR_STRING "YOU WIN! #KCL", 0x67
+   638                              <1> message: 
+   445                              <1>  %strlen %%len %1
+   446                              <1>  %assign %%i 1
+   447                              <1>  %rep %%len
+   448                              <1>  %substr %%c %1 %%i
+   449                              <1>  db %%c ^ %2
+   450                              <1>  %assign %%i %%i + 1
+   451                              <1>  %endrep
+   448                              <2>  %substr %%c %1 %%i
+   449 00000604 3E                  <2>  db %%c ^ %2
+   450                              <2>  %assign %%i %%i + 1
+   448                              <2>  %substr %%c %1 %%i
+   449 00000605 28                  <2>  db %%c ^ %2
+   450                              <2>  %assign %%i %%i + 1
+   448                              <2>  %substr %%c %1 %%i
+   449 00000606 32                  <2>  db %%c ^ %2
+   450                              <2>  %assign %%i %%i + 1
+   448                              <2>  %substr %%c %1 %%i
+   449 00000607 47                  <2>  db %%c ^ %2
+   450                              <2>  %assign %%i %%i + 1
+   448                              <2>  %substr %%c %1 %%i
+   449 00000608 30                  <2>  db %%c ^ %2
+   450                              <2>  %assign %%i %%i + 1
+   448                              <2>  %substr %%c %1 %%i
+   449 00000609 2E                  <2>  db %%c ^ %2
+   450                              <2>  %assign %%i %%i + 1
+   448                              <2>  %substr %%c %1 %%i
+   449 0000060A 29                  <2>  db %%c ^ %2
+   450                              <2>  %assign %%i %%i + 1
+   448                              <2>  %substr %%c %1 %%i
+   449 0000060B 46                  <2>  db %%c ^ %2
+   450                              <2>  %assign %%i %%i + 1
+   448                              <2>  %substr %%c %1 %%i
+   449 0000060C 47                  <2>  db %%c ^ %2
+   450                              <2>  %assign %%i %%i + 1
+   448                              <2>  %substr %%c %1 %%i
+   449 0000060D 44                  <2>  db %%c ^ %2
+   450                              <2>  %assign %%i %%i + 1
+   448                              <2>  %substr %%c %1 %%i
+   449 0000060E 2C                  <2>  db %%c ^ %2
+   450                              <2>  %assign %%i %%i + 1
+   448                              <2>  %substr %%c %1 %%i
+   449 0000060F 24                  <2>  db %%c ^ %2
+   450                              <2>  %assign %%i %%i + 1
+   448                              <2>  %substr %%c %1 %%i
+   449 00000610 2B                  <2>  db %%c ^ %2
+   450                              <2>  %assign %%i %%i + 1
+   452 00000611 67                  <1>  db 0 ^ %2
+   639                                  
+   640 00000612 90<rep Eh>              align 16
+   641                                  block3_func:
+   642 00000620 4D8B7D18                	mov r15, [r13+24]
+   643 00000624 4D01F7                  	add r15, r14
+   644 00000627 B975EE4070              	mov rcx, HASH_KERNEL32
+   645 0000062C BA3C8478F1              	mov rdx, HASH_GETSTDHANDLE
+   646 00000631 498B4718                	mov rax, [r15+24]
+   647 00000635 4C01F0                  	add rax, r14
+   648 00000638 4883EC20                	sub rsp, 32
+   649 0000063C FFD0                    	call rax
+   650 0000063E 4883C420                	add rsp, 32
+   651 00000642 4989C4                  	mov r12, rax
+   652 00000645 B975EE4070              	mov rcx, HASH_KERNEL32
+   653 0000064A BAA41142EE              	mov rdx, HASH_WRITECONSOLE
+   654 0000064F 498B4718                	mov rax, [r15+24]
+   655 00000653 4C01F0                  	add rax, r14
+   656 00000656 4883EC20                	sub rsp, 32
+   657 0000065A FFD0                    	call rax
+   658 0000065C 4883C420                	add rsp, 32
+   659 00000660 4989C5                  	mov r13, rax
+   660 00000663 48C7C1F5FFFFFF          	mov rcx, -11
+   661 0000066A 4883EC20                	sub rsp, 32
+   662 0000066E 41FFD4                  	call r12
+   663 00000671 4883C420                	add rsp, 32
+   664 00000675 4889C3                  	mov rbx, rax
+   665 00000678 488D0D85FFFFFF          	lea rcx, [rel message]
+   666 0000067F BA0E000000              	mov rdx, 14
+   667 00000684 41B867000000            	mov r8, 0x67
+   668 0000068A 498B07                  	mov rax, [r15+0]
+   669 0000068D 4C01F0                  	add rax, r14
+   670 00000690 FFD0                    	call rax
+   671 00000692 4889D9                  	mov rcx, rbx
+   672 00000695 4889C2                  	mov rdx, rax
+   673 00000698 41B80D000000            	mov r8, 13
+   674 0000069E 4D31C9                  	xor r9, r9
+   675 000006A1 4883EC28                	sub rsp, 40
+   676 000006A5 48C744242000000000      	mov qword [rsp+32], 0
+   677 000006AE 41FFD5                  	call r13
+   678 000006B1 4883C428                	add rsp, 40
+   679 000006B5 C3                      	ret
+   680                                  	
+   681                                  	
+   682 000006B6 0000000000000000        block3_func_end: dq 0
+   683                                  	
+   684                                  ; ===============================================
+   685 000006BE 90<rep 2h>              align 16
+   686                                  exit_func:
+   687 000006C0 F3AA                    	rep stosb
+   688 000006C2 B9000100C0              	mov ecx, 0xC0000100
+   689 000006C7 4831C0                  	xor rax, rax
+   690 000006CA 4831D2                  	xor rdx, rdx
+   691 000006CD 0F30                    	wrmsr
+   692 000006CF 4831C0                  	xor rax, rax
+   693 000006D2 C3                      	ret

